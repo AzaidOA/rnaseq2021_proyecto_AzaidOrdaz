@@ -1,13 +1,14 @@
 ---
-title: "Proyecto"
-author: "Manuel Azaid Ordaz Arias"
-date: "28/2/2021"
+title: Proyecto
+author: Manuel Azaid Ordaz Arias
+date: 28/2/2021
 output: html_document
 ---
 ```{r}
 library("recount3")
 human_projects <- available_projects()
 
+<<<<<<< HEAD:R/Proyecto.Rmd
 rse_gene_SRP078152 <- create_rse(
     subset(
         human_projects,
@@ -119,6 +120,14 @@ vGene <- voom(dge, mod, plot = TRUE)
 # Contrastando primero con el de 24 hrs
 ```{r}
 eb_results <- eBayes(lmFit(vGene))
+=======
+# Proyecto
+
+\`\`\`{r setup, include=FALSE} knitr::opts\_chunk$set\(echo = TRUE\)
+
+```text
+## R Markdown
+>>>>>>> cb8d1de45bc1be70cc7d26897c7611ba0acd219c:r/proyecto.md
 
 de_results <- topTable(
     eb_results,
@@ -146,6 +155,7 @@ volcanoplot(eb_results, coef = 2, highlight = 5, names = de_results$gene_name)
 # Visualizando
 
 
+<<<<<<< HEAD:R/Proyecto.Rmd
 ```{r}
 i <- which.min(de_results$adj.P.Val)
 title <- paste("Expresion del gene top",de_results$gene_name[i])
@@ -198,3 +208,11 @@ plotMDS(vGene$E, labels = df$Treatment, col = col.group)
 
 
 
+=======
+\`\`\`{r pressure, echo=FALSE} plot\(pressure\)
+
+\`\`\`
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+>>>>>>> cb8d1de45bc1be70cc7d26897c7611ba0acd219c:r/proyecto.md

@@ -1,0 +1,231 @@
+$grupo---
+  title: "ProyectoFinal"
+author: "Manuel Azaid Ordaz Arias"
+---
+  # Cargando Librerias
+
+library("recount3")
+library("edgeR")
+library("limma")
+library("pheatmap")
+library("RColorBrewer")
+
+# Abstract
+'''Highly pathogenic Zaire ebolavirus (EBOV) infection is associated with a
+dysregulated immune response and high levels of cytokines and chemokines are
+observed in fatal human cases. . In stark contrast Reston ebolavirus (RESTV)
+might be non-pathogenic for humans yet the underlying mechanisms determining
+pathogenicity for different Ebola viruses are not understood. In this study we
+investigate antiviral immune responses in EBOV- and RESTV- infected primary
+human monocyte-derived macrophages (MDM). We provide evidence that increased
+pathogenicity of the highly pathogenic EBOV is associated with a strong
+activation of host responses from infected MDM. The observed cytokine response
+after EBOV infection is strikingly similar to LPS-mediated immune signatures
+however EBOV caused significant induction of the interferon response in
+addition. In contrast we show that the low pathogenic RESTV fails to elicit
+significant immune responses in infected MDM. These results demonstrate a
+correlation of pathogenicity and excessive MDM activation for different Ebola
+virus species. Interaction of the viral glycoprotein (GP) with Toll-like
+receptor 4 (TLR4) leading to activation of NF_B signaling is responsible for
+this effect rather than differences in replication or blocking of immune
+signaling. We demonstrate that inhibition of TLR4 is able to abolish EBOV-GP
+mediated NF_B activation which might offer the possibility to develop targeted
+treatments for EBOV limiting the extreme immune response that seems to be
+detrimental to the host. Overall design: RNA was isolated from primary cultured
+human macrophages (n=3 donors) that were either mock-infected, infected with
+Ebola virus (Kikwit-95) or Reston virus (Pennsylvania), or treated with
+lipopolysaccharide (LPS).'''
+# Obteniendo datos del proyecto SRP078152
+
+human_projects <- available_projects()
+
+rse_gene_SRP078152 <- create_rse(
+  subset(
+    human_projects,
+    project == "SRP078152" & project_type == "data_sources"
+  )
+)
+assay(rse_gene_SRP078152, "counts") <- compute_read_counts(rse_gene_SRP078152)
+rse_gene_SRP078152$sra.sample_attributes
+
+
+
+## Analizando los atributos y viendo que todos manejan el mismo tipo de informacion puedo pasar a usar expand_sra_attributes() sin problemas
+
+
+rse_gene_SRP078152 <- expand_sra_attributes(rse_gene_SRP078152)
+colData(rse_gene_SRP078152)[
+  ,
+  grepl("^sra_attribute", colnames(colData(rse_gene_SRP078152)))
+]
+
+## Asignaremos el tipo formato correcto a los atributos que los necesiten
+
+rse_gene_SRP078152$sra_attribute.donor <- factor(rse_gene_SRP078152$sra_attribute.donor)
+rse_gene_SRP078152$sra_attribute.treatment <- factor(rse_gene_SRP078152$sra_attribute.treatment)
+rse_gene_SRP078152$`sra_attribute.hours_post-infection` <- as.numeric(rse_gene_SRP078152$`sra_attribute.hours_post-infection`)
+summary(as.data.frame(colData(rse_gene_SRP078152)[
+  ,
+  grepl("^sra_attribute.[donor|treatment]", colnames(colData(rse_gene_SRP078152)))
+]))
+unique(rse_gene_SRP078152$`sra_attribute.hours_post-infection`)
+
+## Utilzaremos el tiempo transcurrido, 12 o 24, para determinar la diferencia en nuestro analisis
+
+rse_gene_SRP078152$hours <- factor(ifelse(rse_gene_SRP078152$`sra_attribute.hours_post-infection` <= 24, 24, 48))
+table(rse_gene_SRP078152$hours)
+
+# Limpieza de los datos
+## Analizaremos la calidad de las muestras pra determinar si dejarlas o limpiarlas
+
+rse_gene_SRP078152$assigned_gene_prop <- rse_gene_SRP078152$recount_qc.gene_fc_count_all.assigned / rse_gene_SRP078152$recount_qc.gene_fc_count_all.total
+summary(rse_gene_SRP078152$assigned_gene_prop)
+
+## Viendo que la mayoria de las muestras tienen una calidad muy baja, utilizare como punto de corte la mediana
+
+# Guardemos por si cambio de opinion
+rse_gene_SRP078152_unfiltered <- rse_gene_SRP078152
+hist(rse_gene_SRP078152$assigned_gene_prop)
+
+
+table(rse_gene_SRP078152$assigned_gene_prop < 0.35)
+
+
+rse_gene_SRP078152 <- rse_gene_SRP078152[, rse_gene_SRP078152$assigned_gene_prop > 0.35]
+
+
+## Ahora que ya limpiamos las muestra, procedere a limpiar los genes
+
+gene_means <- rowMeans(assay(rse_gene_SRP078152, "counts"))
+summary(gene_means)
+
+## Viendo que incluso en mi primer quantile tengo una expresion genetica muy mala, de 0, usare la meiana para determinarla como umbral para eliminar los genes
+
+rse_gene_SRP078152 <- rse_gene_SRP078152[gene_means > 0.3, ]
+dim(rse_gene_SRP078152)
+
+
+round(nrow(rse_gene_SRP078152) / nrow(rse_gene_SRP078152_unfiltered) * 100, 2)
+
+
+dge <- DGEList(
+  counts = assay(rse_gene_SRP078152, "counts"),
+  genes = rowData(rse_gene_SRP078152)
+)
+dge <- calcNormFactors(dge)
+
+
+# Expresion diferencial
+Pero primero haremos el modelo estadistico
+
+library("ggplot2")
+ggplot(as.data.frame(colData(rse_gene_SRP078152)), aes(y = assigned_gene_prop, x = hours)) +
+  geom_boxplot() +
+  theme_bw(base_size = 20) +
+  ylab("Assigned Gene Prop") +
+  xlab("Hours Post Infection Group")
+
+## Utilizando Shiny comprobare que mi modelo es full rank
+
+app <- ExploreModelMatrix::ExploreModelMatrix(
+  sampleData = colData(rse_gene_SRP078152)[, c("hours", "assigned_gene_prop",
+                                               "sra_attribute.treatment"
+  )],
+  designFormula = ~ hours + assigned_gene_prop + sra_attribute.treatment
+)
+if (interactive()) shiny::runApp(app)
+
+# Normalizacion
+## Ya que tengo el modelo estadistico puedo proceder a usar limma para el estudio de expresion diferencial
+
+mod <- model.matrix( ~ hours + assigned_gene_prop + sra_attribute.treatment,
+                     data = colData(rse_gene_SRP078152))
+colnames(mod)
+
+
+vGene <- voom(dge, mod, plot = TRUE)
+eb_results <- eBayes(lmFit(vGene))
+
+de_results <- topTable(
+  eb_results,
+  coef = 2,
+  number = nrow(rse_gene_SRP078152),
+  sort.by = "none"
+)
+dim(de_results)
+
+
+head(de_results)
+
+## Obteniendo los genes realmente significativos
+
+table(de_results$adj.P.Val < 0.05)
+
+
+round(table(de_results$adj.P.Val < 0.05)[2] / length(de_results$adj.P.Val) * 100, 2)
+
+
+
+volcanoplot(eb_results, coef = 2, highlight = 5, names = de_results$gene_name)
+
+
+# Visualizando
+
+## En esta grafca observo como la expresion genetica del gene con el mejor P value, en cada uno de los tratamientos y en ambos escenarios, 24 y 48 hrs. Viendo que en la mayoria de las situaciones el gene se expresa mas durante las primeras 24 hrs, en cualquier tratamiento
+
+
+i <- which.min(de_results$adj.P.Val)
+title <- paste("Expresion del gene top",de_results$gene_name[i])
+df_temp <- data.frame(
+  Expression = vGene$E[i,],
+  Hours = rse_gene_SRP078152$hours,
+  Treatment = rse_gene_SRP078152$sra_attribute.treatment
+)
+ggplot(df_temp, aes(y = Expression, x = Hours, fill = Treatment)) +
+  ggtitle(title) +
+  geom_boxplot() +
+  theme_dark(base_size = 20)
+
+## Extrayendo el top 30 de expresion de mis genes
+En este pheatmap puedo obser que mis mejores 30 genes tienen una mejor calidad cdurante las primeras 24 hrs, y especificamente en los tratamientos de EBOV, EBOV/LPS, y LPS. Esto me hace sentido ya que recordando el tratamiento con EBOV es el del virus del ebola el cuañ diferencia de los demas tratamientos si causa una enfermedad en humanos, y junto con el LPS activan los TLR en macrofagos de humanos, lo cual hace que claramente su expresion sea mejor.
+
+exprs_heatmap <- vGene$E[rank(de_results$adj.P.Val) <= 30, ]
+df <- as.data.frame(colData(rse_gene_SRP078152)[, c("hours", "sra_attribute.treatment", "assigned_gene_prop")])
+colnames(df) <- c("Hours Post Infection", "Treatment", "Assigned Genes")
+rownames(exprs_heatmap) <- rowRanges(rse_gene_SRP078152)$gene_name[
+  match(rownames(exprs_heatmap), rowRanges(rse_gene_SRP078152)$gene_id)
+]
+pheatmap(
+  exprs_heatmap,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  annotation_col = df
+)
+
+## Ahora utilizare un escalo multidimensiona para intentar ver si hay un agrupamiento entre los datos por grupos de tratamiento
+
+col.group <- df$`Hours Post Infection`
+levels(col.group) <- brewer.pal(nlevels(col.group), "Set1")
+col.group <- as.character(col.group)
+
+## MDS por grupos de Tratamiento
+plotMDS(vGene$E, labels = df$Treatment, col = col.group)
+
+'''Aqui claramene no hay una separacion entre los datos con base en el tratamiento.
+
+# Conclusiones
+Durante este analisis pude ver que las vias de señalizacion que utiliza el virus del ebola en los macrofagos, hace que se expresen mas los genes durante las primeras 24 hrs, y que ademas estas vias señalizacion se comparten con las que utilizan agentes bacterianos como el LPS, por ejemplo los TLR. Eso claramente podria apoyar la teoria para utilizar estas vias de señalizacion como un target terapeutico para el tratamiento de esta enfermedad.
+
+# Referencias
+
+Collado-Torres L (2021). Explore and download data from the recount3 project. doi: 10.18129/B9.bioc.recount3, https://github.com/LieberInstitute/recount3 - R package version 1.0.7, http://www.bioconductor.org/packages/recount3.
+
+Wilks C, Collado-Torres L, Zheng SC, Jaffe AE, Nellore A, Hansen KD, Langmead B (2020). “recount3 pre-print title TODO.” bioRxiv. doi: 10.1101/TODO, https://www.biorxiv.org/content/10.1101/TODO.
+
+Robinson MD, McCarthy DJ, Smyth GK (2010). “edgeR: a Bioconductor package for differential expression analysis of digital gene expression data.” Bioinformatics, 26(1), 139-140. doi: 10.1093/bioinformatics/btp616.
+
+McCarthy DJ, Chen Y, Smyth GK (2012). “Differential expression analysis of multifactor RNA-Seq experiments with respect to biological variation.” Nucleic Acids Research, 40(10), 4288-4297. doi: 10.1093/nar/gks042.
+Ritchie ME, Phipson B, Wu D, Hu Y, Law CW, Shi W, Smyth GK (2015). “limma powers differential expression analyses for RNA-sequencing and microarray studies.” Nucleic Acids Research, 43(7), e47. doi: 10.1093/nar/gkv007.
+'''

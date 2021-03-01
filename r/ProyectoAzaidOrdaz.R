@@ -1,8 +1,8 @@
-$grupo---
-  title: "ProyectoFinal"
+---
+title: "ProyectoFinal"
 author: "Manuel Azaid Ordaz Arias"
 ---
-  # Cargando Librerias
+# Cargando Librerias
 
 library("recount3")
 library("edgeR")
@@ -11,7 +11,7 @@ library("pheatmap")
 library("RColorBrewer")
 
 # Abstract
-'''Highly pathogenic Zaire ebolavirus (EBOV) infection is associated with a
+"""Highly pathogenic Zaire ebolavirus (EBOV) infection is associated with a
 dysregulated immune response and high levels of cytokines and chemokines are
 observed in fatal human cases. . In stark contrast Reston ebolavirus (RESTV)
 might be non-pathogenic for humans yet the underlying mechanisms determining
@@ -34,7 +34,7 @@ treatments for EBOV limiting the extreme immune response that seems to be
 detrimental to the host. Overall design: RNA was isolated from primary cultured
 human macrophages (n=3 donors) that were either mock-infected, infected with
 Ebola virus (Kikwit-95) or Reston virus (Pennsylvania), or treated with
-lipopolysaccharide (LPS).'''
+lipopolysaccharide (LPS)."""
 # Obteniendo datos del proyecto SRP078152
 
 human_projects <- available_projects()
